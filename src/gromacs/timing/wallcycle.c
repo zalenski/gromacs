@@ -51,6 +51,8 @@
 #include "gromacs/utility/smalloc.h"
 #include "gromacs/utility/snprintf.h"
 
+struct gmx_wallclock_gpu_pme_t gmx_wallclock_gpu_pme; // HACK
+
 /* DEBUG_WCYCLE adds consistency checking for the counters.
  * It checks if you stop a counter different from the last
  * one that was opened and if you do nest too deep.
@@ -122,6 +124,13 @@ static const char *wcsn[ewcsNR] =
     "Ewald F correction",
     "NB X buffer ops.",
     "NB F buffer ops.",
+    "PME interpol",
+    "PME spline",
+    "PME spread",
+    "PME fft r2c",
+    "PME solve",
+    "PME fft c2r",
+    "PME gather",
 };
 
 gmx_bool wallcycle_have_counter(void)
@@ -348,7 +357,7 @@ void wallcycle_get(gmx_wallcycle_t wc, int ewc, int *n, double *c)
 
 void wallcycle_reset_all(gmx_wallcycle_t wc)
 {
-    int i;
+  int i, j;
 
     if (wc == NULL)
     {
@@ -375,6 +384,16 @@ void wallcycle_reset_all(gmx_wallcycle_t wc)
         wc->wcsc[i].c = 0;
     }
 #endif
+
+    // HACK
+    for (i = 0; i < 7; i++)
+    {
+        for (j = 0; j < 7; j++)
+        {
+	    gmx_wallclock_gpu_pme.pme_time[i][j].t = 0.0;
+	    gmx_wallclock_gpu_pme.pme_time[i][j].c = 0;
+	}
+    }
 }
 
 static gmx_bool is_pme_counter(int ewc)
@@ -581,7 +600,7 @@ static void print_cycles(FILE *fplog, double c2t, const char *name,
 }
 
 static void print_gputimes(FILE *fplog, const char *name,
-                           int n, double t, double tot_t)
+                           int n, double t, double tot_t, char c)
 {
     char num[11];
     char avg_perf[11];
@@ -598,13 +617,13 @@ static void print_gputimes(FILE *fplog, const char *name,
     }
     if (t != tot_t)
     {
-        fprintf(fplog, " %-29s %10s%12.3f   %s   %5.1f\n",
-                name, num, t/1000, avg_perf, 100 * t/tot_t);
+        fprintf(fplog, "%c%-29s %10s%12.3f   %s   %5.1f\n",
+                c, name, num, t/1000, avg_perf, 100 * t/tot_t);
     }
     else
     {
-        fprintf(fplog, " %-29s %10s%12.3f   %s   %5.1f\n",
-                name, "", t/1000, avg_perf, 100.0);
+        fprintf(fplog, "%c%-29s %10s%12.3f   %s   %5.1f\n",
+                c, name, "", t/1000, avg_perf, 100.0);
     }
 }
 
@@ -799,6 +818,13 @@ void wallcycle_print(FILE *fplog, int nnodes, int npme, double realtime,
                 tot_k += gpu_t->ktime[i][j].t;
             }
         }
+        for (i = 0; i < 7; i++)
+	{
+            for (j = 0; j < 7; j++)
+            {
+	        tot_k += gmx_wallclock_gpu_pme.pme_time[i][j].t;
+	    }
+	}
         tot_gpu += tot_k;
 
         tot_cpu_overlap = wc->wcc[ewcFORCE].c;
@@ -812,9 +838,9 @@ void wallcycle_print(FILE *fplog, int nnodes, int npme, double realtime,
         fprintf(fplog, " Computing:                         Count  Wall t (s)      ms/step       %c\n", '%');
         fprintf(fplog, "%s\n", hline);
         print_gputimes(fplog, "Pair list H2D",
-                       gpu_t->pl_h2d_c, gpu_t->pl_h2d_t, tot_gpu);
+                       gpu_t->pl_h2d_c, gpu_t->pl_h2d_t, tot_gpu, ' ');
         print_gputimes(fplog, "X / q H2D",
-                       gpu_t->nb_c, gpu_t->nb_h2d_t, tot_gpu);
+                       gpu_t->nb_c, gpu_t->nb_h2d_t, tot_gpu, ' ');
 
         for (i = 0; i < 2; i++)
         {
@@ -823,14 +849,27 @@ void wallcycle_print(FILE *fplog, int nnodes, int npme, double realtime,
                 if (gpu_t->ktime[i][j].c)
                 {
                     print_gputimes(fplog, k_log_str[i][j],
-                                   gpu_t->ktime[i][j].c, gpu_t->ktime[i][j].t, tot_gpu);
+                                   gpu_t->ktime[i][j].c, gpu_t->ktime[i][j].t, tot_gpu, ' ');
                 }
             }
         }
+        for (i = 0; i < 7; i++)
+	{
+            for (j = 0; j < 7; j++)
+            {
+	        if (gmx_wallclock_gpu_pme.pme_time[i][j].c)
+		{
+		    print_gputimes(fplog, wcsn[ewcsPME_INTERPOL_IDX + i],
+				   gmx_wallclock_gpu_pme.pme_time[i][j].c,
+				   gmx_wallclock_gpu_pme.pme_time[i][j].t,
+				   tot_gpu, j == 0 ? ' ' : '0' + j);
+		}
+	    }
+	}
 
-        print_gputimes(fplog, "F D2H",  gpu_t->nb_c, gpu_t->nb_d2h_t, tot_gpu);
+        print_gputimes(fplog, "F D2H",  gpu_t->nb_c, gpu_t->nb_d2h_t, tot_gpu, ' ');
         fprintf(fplog, "%s\n", hline);
-        print_gputimes(fplog, "Total ", gpu_t->nb_c, tot_gpu, tot_gpu);
+        print_gputimes(fplog, "Total ", gpu_t->nb_c, tot_gpu, tot_gpu, ' ');
         fprintf(fplog, "%s\n", hline);
 
         gpu_cpu_ratio = tot_gpu/tot_cpu_overlap;
