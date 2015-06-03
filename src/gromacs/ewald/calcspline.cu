@@ -49,6 +49,8 @@ typedef float real;
 #define PME_ORDER_MAX 12
 typedef real *splinevec[DIM];
 extern gpu_flags calcspline_gpu_flags;
+extern gpu_events gpu_events_calcspline;
+
 
 /* Macro to force loop unrolling by fixing order.
  * This gives a significant performance gain.
@@ -226,6 +228,7 @@ void make_bsplines_gpu(splinevec theta, splinevec dtheta, int order,
 
   int block_size = 32;
   int n_blocks = (nr + block_size - 1) / block_size;
+  events_record_start(gpu_events_calcspline);
   switch (order)
   {
   case 4: make_bsplines_kernel_4<<<n_blocks, block_size>>>
@@ -236,6 +239,7 @@ void make_bsplines_gpu(splinevec theta, splinevec dtheta, int order,
       (order,
        theta_d, dtheta_d, fractx_d, nr, coefficient_d, bDoSplines); break;
   }
+  events_record_stop(gpu_events_calcspline, ewcsPME_CALCSPLINE, 0);
 
   if (check_vs_cpu(calcspline_gpu_flags)) {
     for (int j = 0; j < DIM; ++j) {

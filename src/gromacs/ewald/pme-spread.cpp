@@ -523,6 +523,18 @@ static void spread_coefficients_bsplines_thread_gpu(pmegrid_t                   
        atc_coefficient, spline_theta,
        atc_n_foo,
        thread);
+    spread1_coefficients_bsplines_thread_gpu_2
+      (pnx, pny, pnz, offx, offy, offz,
+       grid, order, atc_idx, spline_ind, spline_n,
+       atc_coefficient, spline_theta,
+       atc_n_foo,
+       thread);
+    spread2_coefficients_bsplines_thread_gpu_2
+      (pnx, pny, pnz, offx, offy, offz,
+       grid, order, atc_idx, spline_ind, spline_n,
+       atc_coefficient, spline_theta,
+       atc_n_foo,
+       thread);
 }
 
 
@@ -1117,6 +1129,11 @@ void spread_on_grid(struct gmx_pme_t *pme,
     c2   = omp_cyc_end(c2);
     cs2 += (double)c2;
 #endif
+
+    {
+      pmegrid_t *pmegrid = !pme->bUseThreads ? &grids->grid : &grids->grid_th[0];
+      //spread2_gpu(pme, atc, grid_index, pmegrid);
+    }
 
     if (bSpread && pme->bUseThreads)
     {

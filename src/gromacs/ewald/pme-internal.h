@@ -398,6 +398,20 @@ void spread_coefficients_bsplines_thread_gpu_2
  int thread);
 
 
+void spread1_coefficients_bsplines_thread_gpu_2
+(int pnx, int pny, int pnz, int offx, int offy, int offz,
+ real *grid, int order, ivec *atc_idx, int *spline_ind, int spline_n,
+ real *atc_coefficient, splinevec *spline_theta, int atc_n_foo,
+ int thread);
+
+
+void spread2_coefficients_bsplines_thread_gpu_2
+(int pnx, int pny, int pnz, int offx, int offy, int offz,
+ real *grid, int order, ivec *atc_idx, int *spline_ind, int spline_n,
+ real *atc_coefficient, splinevec *spline_theta, int atc_n_foo,
+ int thread);
+
+
 void calc_interpolation_idx_gpu_mid
 (int nx, int ny, int nz,
  int start_ix, int start_iy, int start_iz,
@@ -407,6 +421,11 @@ void calc_interpolation_idx_gpu_mid
  int *nnx, int *nny, int *nnz,
  rvec *xptr_v, ivec *idxptr_v, rvec *fptr_v,
  int start, int end, int thread);
+
+
+void spread3_gpu(struct gmx_pme_t *pme, pme_atomcomm_t *atc,
+		 int grid_index,
+		 pmegrid_t *pmegrid);
 
 
   // FFT

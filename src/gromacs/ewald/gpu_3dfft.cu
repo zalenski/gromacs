@@ -15,6 +15,9 @@
 #include <cufft.h>
 
 extern gpu_flags fft_gpu_flags;
+extern gpu_events gpu_events_fft_r2c;
+extern gpu_events gpu_events_fft_c2r;
+
 
 struct gmx_parallel_3dfft_gpu {
   real *real_data;
@@ -261,14 +264,18 @@ gmx_parallel_3dfft_execute_gpu(gmx_parallel_3dfft_gpu_t    pfft_setup,
 
   if (dir == GMX_FFT_REAL_TO_COMPLEX) {
     cudaMemcpy(setup->rdata, setup->real_data, x * y * z * sizeof(real), cudaMemcpyHostToDevice);
+    events_record_start(gpu_events_fft_r2c);
     cufftExecR2C(setup->plan, setup->rdata, setup->cdata);
     // FIXME: -> y major, z middle, x minor or continuous
     transpose_xyz_yzx(x, y, z, setup->cdata, true);
+    events_record_stop(gpu_events_fft_r2c, ewcsPME_FFT_R2C, 0);
   } else {
     cudaMemcpy(setup->cdata + x * y * (z/2+1), setup->complex_data, x * y * (z/2+1) * sizeof(t_complex), cudaMemcpyHostToDevice);
     // FIXME: y major, z middle, x minor or continuous ->
+    events_record_start(gpu_events_fft_c2r);
     transpose_xyz_yzx(x, y, z, setup->cdata, false);
     cufftExecC2R(setup->plan, setup->cdata, setup->rdata);
+    events_record_stop(gpu_events_fft_c2r, ewcsPME_FFT_C2R, 0);
   }
 
   if (check_vs_cpu(fft_gpu_flags)) {

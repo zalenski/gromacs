@@ -24,7 +24,7 @@ enum TH_V_ID {
 
 static thread_vectors TH_V(32, ID_END);
 extern gpu_flags solve_gpu_flags;
-
+extern gpu_events gpu_events_solve;
 
 typedef real *splinevec[DIM];
 
@@ -141,6 +141,7 @@ int solve_pme_yzx_gpu(real pme_epsilon_r,
     thrust::copy(pme_bsp_mod[ZZ], pme_bsp_mod[ZZ] + nz, pme_bsp_mod_z_d.begin());
     fprintf(stderr, "grid copy after\n");
 
+    events_record_start(gpu_events_solve);
     solve_pme_yzx_iyz_loop_kernel<<<n_blocks, block_size>>>
       (iyz0, iyz1, local_ndata[ZZ], local_ndata[XX],
        local_offset[XX], local_offset[YY], local_offset[ZZ],
@@ -153,6 +154,7 @@ int solve_pme_yzx_gpu(real pme_epsilon_r,
        thrust::raw_pointer_cast(&grid_d[0]), ewaldcoeff, vol, bEnerVir,
        thrust::raw_pointer_cast(&energy_d[0]),
        thrust::raw_pointer_cast(&virial_d[0]));
+    events_record_stop(gpu_events_solve, ewcsPME_SOLVE, 0);
 
     if (check_vs_cpu(solve_gpu_flags)) {
       thrust::host_vector<t_complex> &grid_h = lv.host<t_complex>(ID_GRID, grid_size);
@@ -478,6 +480,7 @@ int solve_pme_lj_yzx_gpu(int nx, int ny, int nz,
     thrust::copy(pme_bsp_mod[YY], pme_bsp_mod[YY] + ny, pme_bsp_mod_y_d.begin());
     thrust::copy(pme_bsp_mod[ZZ], pme_bsp_mod[ZZ] + nz, pme_bsp_mod_z_d.begin());
 
+    events_record_start(gpu_events_solve);
     solve_pme_lj_yzx_iyz_loop_kernel<<<n_blocks, block_size>>>
       (iyz0, iyz1, local_ndata[ZZ], local_ndata[XX],
        local_offset[XX], local_offset[YY], local_offset[ZZ],
@@ -491,6 +494,7 @@ int solve_pme_lj_yzx_gpu(int nx, int ny, int nz,
        thrust::raw_pointer_cast(&grid_d[0]), bLB, ewaldcoeff, vol, bEnerVir,
        thrust::raw_pointer_cast(&energy_d[0]),
        thrust::raw_pointer_cast(&virial_d[0]));
+    events_record_stop(gpu_events_solve, ewcsPME_SOLVE, 0);
 
     for (int ig = 0; ig < 6; ++ig) {
       if (check_vs_cpu(solve_gpu_flags)) {

@@ -24,6 +24,7 @@ static thread_vectors TH_V(32, ID_END);
 
 typedef real *splinevec[DIM];
 extern gpu_flags gather_gpu_flags;
+extern gpu_events gpu_events_gather;
 
 
 #define DO_FSPLINE(order)                      \
@@ -246,6 +247,7 @@ void gather_f_bsplines_gpu_2
     int block_size = 64;
     int n_blocks = (n + block_size - 1) / block_size;
 
+    events_record_start(gpu_events_gather);
     gather_f_bsplines_kernel<<<n_blocks, block_size>>>
       (thrust::raw_pointer_cast(&grid_d[0]),
        order, n,
@@ -262,6 +264,7 @@ void gather_f_bsplines_gpu_2
        thrust::raw_pointer_cast(&i0_d[0]),
        thrust::raw_pointer_cast(&j0_d[0]),
        thrust::raw_pointer_cast(&k0_d[0]));
+    events_record_stop(gpu_events_gather, ewcsPME_GATHER, 0);
 
     atc_f_h = atc_f_d;
 

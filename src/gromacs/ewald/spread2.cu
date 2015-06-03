@@ -55,45 +55,12 @@ extern gpu_events gpu_events_spread;
 
 /* This has to be a macro to enable full compiler optimization with xlC (and probably others too) */
 #define DO_BSPLINE(order)                            \
-	    if (coefficient[i] == 0) { \
-thx[0] = 3; \
-thy[0] = 3; \
-thz[0] = 3; \
-i0[0] = 3; \
-j0[0] = 3; \
-k0[0] = 3; \
-coefficient[0] = 3; \
-} \
-            _Pragma("unroll")  \
-     for (int ithx = 0; ithx < order; ithx++)	     \
-     {  \
-        int index_x = (i0[i]+ithx)*pny*pnz;                     \
-        real valx    = coefficient[i]*thx[i*order+ithx];                          \
-                                                     \
-        {							      \
-            real valxy    = valx*thy[i*order+ithy];                   \
-            int index_xy = index_x+(j0[i]+ithy)*pnz;            \
-                                                     \
-            {					     \
-                int index_xyz        = index_xy+(k0[i]+ithz);   \
-                /*grid[index_xyz] += valxy*thz[i*order+ithz];*/      \
-		atomicAdd(&grid[index_xyz], valxy*thz[i*order+ithz]); \
-	    }						 \
-	}						 \
-    }
 
 
 #define SPREAD_COEFFICIENTS_KERNEL(order) \
-  {  \
-    int i = blockIdx.z * blockDim.z + threadIdx.z;  \
-    if (i < n) {  \
-      if (coefficient[i]) { \
-        DO_BSPLINE(order);			     \
-      } \
-    }  \
-  }
 
-__global__ void spread_coefficients_kernel_4(int n,
+template <int order>
+__global__ void spread2_coefficients_kernel_O(int n,
 					     real *grid,
 					     int *i0, int *j0, int *k0,
 					     int pny, int pnz,
@@ -102,32 +69,22 @@ __global__ void spread_coefficients_kernel_4(int n,
 {
   int ithz = threadIdx.x;
   int ithy = threadIdx.y;
-  SPREAD_COEFFICIENTS_KERNEL(4);
-}
+  int i = blockIdx.z * blockDim.z + threadIdx.z;
+  if (i < n) {
+    if (coefficient[i]) {
+      _Pragma("unroll")
+      for (int ithx = 0; ithx < order; ithx++)
+      {
+	int index_x = (i0[i]+ithx)*pny*pnz;
+	real valx    = coefficient[i]*thx[i*order+ithx];
 
-__global__ void spread_coefficients_kernel_5(int n,
-					     real *grid,
-					     int *i0, int *j0, int *k0,
-					     int pny, int pnz,
-					     real *coefficient,
-					     real *thx, real *thy, real *thz)
-{
-  int ithz = threadIdx.x;
-  int ithy = threadIdx.y;
-  SPREAD_COEFFICIENTS_KERNEL(5);
-}
+	real valxy    = valx*thy[i*order+ithy];
+	int index_xy = index_x+(j0[i]+ithy)*pnz;
 
-__global__ void spread_coefficients_kernel_n(int order,
-					     int n,
-					     real *grid,
-					     int *i0, int *j0, int *k0,
-					     int pny, int pnz,
-					     real *coefficient,
-					     real *thx, real *thy, real *thz)
-{
-  for (int ithy = 0; (ithy < order); ithy++) {
-    for (int ithz = 0; (ithz < order); ithz++) {
-      SPREAD_COEFFICIENTS_KERNEL(order);
+	int index_xyz        = index_xy+(k0[i]+ithz);
+	/*grid[index_xyz] += valxy*thz[i*order+ithz];*/
+	atomicAdd(&grid[index_xyz], valxy*thz[i*order+ithz]);
+      }
     }
   }
 }
@@ -136,68 +93,7 @@ __global__ void spread_coefficients_kernel_n(int order,
 
 static tMPI::mutex print_mutex;
 
-void try_bunching(int pnx, int pny, int pnz,
-		  ivec *atc_idx, int *spline_ind, int spline_n,
-		  real *atc_coefficient, int atc_n_foo) {
-  int n = atc_n_foo; // spline_n;
-
-  const int bnx = 32, bny = 32, bnz = 1;
-  int bn = 0;
-  int mark[bnx][bny];
-  int marko[bnx][bny];
-  for (int x = 0; x < bnx; ++x) {
-    for (int y = 0; y < bny; ++y) {
-      mark[x][y] = 0;
-      marko[x][y] = 0;
-    }
-  }
-  int maxmark = 0;
-  int order = 4, bunch = 1; //(int) (order * 1.25 + .5);
-
-  print_mutex.lock();
-  fprintf(stderr, "%d %dx%dx%d\n", n, pnx, pny, pnz);
-  for (int i = 0; i < atc_n_foo; ++i) {
-    //for (int ii = 0; ii < n; ++ii) {
-    //int i = spline_ind[ii];
-    real coefficient_i = atc_coefficient[i];
-    if (coefficient_i == 0) {
-      continue;
-    }
-    int *idxptr = atc_idx[i];
-    int x = idxptr[XX], y = idxptr[YY], z = idxptr[ZZ];
-
-    if (!(x < bnx && y < bny && z < bnz)) {
-	continue;
-    }
-
-    if (++mark[x / bunch][y / bunch] > maxmark) {
-      maxmark = mark[x / bunch][y / bunch];
-    }
-    for (int dxb = 0; dxb < order / bunch; ++dxb) {
-      for (int dyb = 0; dyb < order / bunch; ++dyb) {
-	if (x / bunch + dxb < bnx && y / bunch + dyb < bny) {
-	  ++marko[x / bunch + dxb][y / bunch + dyb];
-	}
-      }
-    }
-
-    ++bn;
-
-    //fprintf(stderr, "(%d,%d,%d) %f\n", x, y, z, coefficient_i);
-  }
-    fprintf(stderr, "bn %d maxmark %d\n", bn, maxmark);
-    int avgsum = 0, avgcount = 0;
-    for (int x = 0; x < bnx / bunch; ++x) {
-      for (int y = 0; y < bny / bunch; ++y) {
-	fprintf(stderr, " %d", mark[x][y]);
-	avgsum += mark[x][y]; ++avgcount;
-      }
-      fprintf(stderr, " mark avg %d\n", avgsum / avgcount);
-    }
-  print_mutex.unlock();
-}
-
-void spread_coefficients_bsplines_thread_gpu_2
+void spread2_coefficients_bsplines_thread_gpu_2
 (int pnx, int pny, int pnz, int offx, int offy, int offz,
  real *grid, int order, ivec *atc_idx, int *spline_ind, int spline_n,
  real *atc_coefficient, splinevec *spline_theta, int atc_n_foo,
@@ -209,7 +105,7 @@ void spread_coefficients_bsplines_thread_gpu_2
     int size_grid = ndatatot * sizeof(real);
 
     real *grid_check;
-    if (check_vs_cpu(spread_gpu_flags)) {
+    if (check_vs_cpu_j(spread_gpu_flags, 2)) {
       grid_check = th_a(TH_ID_GRID, thread, size_grid, TH_LOC_HOST);
       memcpy(grid_check, grid, ndatatot * sizeof(real));
     }
@@ -243,18 +139,13 @@ void spread_coefficients_bsplines_thread_gpu_2
 
     int oo = 0;
 
-    if (check_vs_cpu(spread_bunching_gpu_flags)) {
-      try_bunching(pnx, pny, pnz,
-		   atc_idx, spline_ind, spline_n, atc_coefficient, atc_n_foo);
-    }
-
     for (int ii = 0; ii < spline_n; ii++)
     {
         int i           = spline_ind[ii];
         real coefficient_i = atc_coefficient[i];
-	if (coefficient_i == 0) {
-	   continue;
-	}
+	//if (coefficient_i == 0) {
+	//   continue;
+	//}
 
 	coefficient[oo] = coefficient_i;
 
@@ -294,20 +185,17 @@ void spread_coefficients_bsplines_thread_gpu_2
   events_record_start(gpu_events_spread);
     switch (order)
     {
-    case 4: spread_coefficients_kernel_4<<<dimGrid, dimBlockOrder>>>
+    case 4: spread2_coefficients_kernel_O<4><<<dimGrid, dimBlockOrder>>>
 	(n, grid_d, i0_d, j0_d, k0_d, pny, pnz,
 	 coefficient_d, thx_d, thy_d, thz_d); break;
-    case 5: spread_coefficients_kernel_5<<<dimGrid, dimBlockOrder>>>
+    case 5: spread2_coefficients_kernel_O<5><<<dimGrid, dimBlockOrder>>>
 	(n, grid_d, i0_d, j0_d, k0_d, pny, pnz,
 	 coefficient_d, thx_d, thy_d, thz_d); break;
-    default: spread_coefficients_kernel_n<<<dimGrid, dimBlockOne>>>
-	(order,
-	 n, grid_d, i0_d, j0_d, k0_d, pny, pnz,
-	 coefficient_d, thx_d, thy_d, thz_d); break;
+    default: /* FIXME */ break;
     }
-  events_record_stop(gpu_events_spread, ewcsPME_SPREAD, 0);
+  events_record_stop(gpu_events_spread, ewcsPME_SPREAD, 2);
 
-  if (check_vs_cpu(spread_gpu_flags)) {
+  if (check_vs_cpu_j(spread_gpu_flags, 2)) {
     print_mutex.lock();
     fprintf(stderr, "Check %d  (%d x %d x %d)\n",
 	    thread, pnx, pny, pnz);

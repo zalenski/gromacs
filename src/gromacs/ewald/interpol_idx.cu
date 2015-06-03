@@ -20,6 +20,7 @@ enum TH_V_ID {
 static thread_vectors TH_V(32, ID_END);
 
 extern gpu_flags interpol_gpu_flags;
+extern gpu_events gpu_events_interpol_idx;
 
 template <typename T>
 static T *raw_off(device_vector<T> &v, int off) {
@@ -90,6 +91,7 @@ void calc_interpolation_idx_gpu_mid
   int block_size = 32;
   int n_blocks = (n + block_size - 1) / block_size;
 
+  events_record_start(gpu_events_interpol_idx);
   calc_interpolation_idx_gpu_kernel<<<n_blocks, block_size>>>
     (nx, ny, nz, start_ix, start_iy, start_iz,
      rxx, ryx, ryy, rzx, rzy, rzz,
@@ -118,6 +120,7 @@ void calc_interpolation_idx_gpu_mid
      thrust::raw_pointer_cast(&fptr_d[2 * n32]),
 
      n);
+  events_record_stop(gpu_events_interpol_idx, ewcsPME_INTERPOL_IDX, 0);
 
   idxptr_h = idxptr_d;
   fptr_h = fptr_d;

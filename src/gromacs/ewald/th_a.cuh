@@ -11,6 +11,12 @@ enum th_id {
   TH_ID_I0, TH_ID_J0, TH_ID_K0,
   TH_ID_THX, TH_ID_THY, TH_ID_THZ,
 
+  // interpol_idx
+  TH_ID_G2T,
+  TH_ID_FSH,
+  TH_ID_NN,
+  TH_ID_XPTR,
+
   TH_ID_END
 };
 enum th_loc {

@@ -14,7 +14,8 @@ struct gpu_flags {
     CPU_ONLY, GPU_ONLY, BOTH, BOTH_CHECK, BOTH_CHECK_VERBOSE
   };
   run_on on;
-  gpu_flags(run_on on) : on(on) { }
+  int j;
+  gpu_flags(run_on on, int j = 0) : on(on), j(j) { }
 };
 
 bool run_on_cpu(const gpu_flags &flags) {
@@ -29,6 +30,10 @@ bool check_vs_cpu(const gpu_flags &flags) {
   return flags.on >= gpu_flags::BOTH_CHECK;
 }
 
+bool check_vs_cpu_j(const gpu_flags &flags, int j) {
+  return flags.on >= gpu_flags::BOTH_CHECK || flags.j == j;
+}
+
 bool check_vs_cpu_verbose(const gpu_flags &flags) {
   return flags.on >= gpu_flags::BOTH_CHECK_VERBOSE;
 }
@@ -36,7 +41,7 @@ bool check_vs_cpu_verbose(const gpu_flags &flags) {
 
 gpu_flags calcspline_gpu_flags(gpu_flags::BOTH);
 gpu_flags interpol_gpu_flags(gpu_flags::BOTH/*_CHECK*/);
-gpu_flags spread_gpu_flags(gpu_flags::BOTH/*_CHECK*/);
+gpu_flags spread_gpu_flags(gpu_flags::BOTH/*_CHECK*/, -1);
 gpu_flags spread_bunching_gpu_flags(gpu_flags::BOTH/*_CHECK*/);
 gpu_flags gather_gpu_flags(gpu_flags::BOTH/*_CHECK*/);
 gpu_flags fft_gpu_flags(gpu_flags::BOTH);
